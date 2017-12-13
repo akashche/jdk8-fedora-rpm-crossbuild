@@ -54,9 +54,9 @@
 %global rev_build_loop  %{build_loop2} %{build_loop1}
 
 %ifarch %{jit_arches}
-%global bootstrap_build 1
+%global bootstrap_build 0
 %else
-%global bootstrap_build 1
+%global bootstrap_build 0
 %endif
 
 %if %{bootstrap_build}
@@ -82,9 +82,9 @@
 # We filter out -Wall which will otherwise cause HotSpot to produce hundreds of thousands of warnings (100+mb logs)
 # We replace it with -Wformat (required by -Werror=format-security) and -Wno-cpp to avoid FORTIFY_SOURCE warnings
 # We filter out -fexceptions as the HotSpot build explicitly does -fno-exceptions and it's otherwise the default for C++
-%global ourflags %(echo %optflags | sed -e 's|-Wall|-Wformat -Wno-cpp|' | sed -r -e 's|-O[0-9]*||')
-%global ourcppflags %(echo %ourflags | sed -e 's|-fexceptions||')
-%global ourldflags %{__global_ldflags}
+%global ourflags ""
+%global ourcppflags ""
+%global ourldflags ""
 %endif
 %endif
 
@@ -1130,6 +1130,9 @@ Patch539: pr2888.patch
 # Non-OpenJDK fixes
 Patch1000: enableCommentedOutSystemNss.patch
 
+# crossbuild changes
+Patch1100: crossbuild.patch
+
 BuildRequires: autoconf
 BuildRequires: automake
 BuildRequires: alsa-lib-devel
@@ -1541,6 +1544,9 @@ sh %{SOURCE12}
 
 %patch1000
 
+# crossbuild patches
+%patch1100
+
 # Extract systemtap tapsets
 %if %{with_systemtap}
 tar -x -I xz -f %{SOURCE8}
@@ -1626,9 +1632,13 @@ fi
 mkdir -p %{buildoutputdir -- $suffix}
 pushd %{buildoutputdir -- $suffix}
 
+%{crossbuild_guard}
+set -e
+
 NSS_LIBS="%{NSS_LIBS} -lfreebl" \
 NSS_CFLAGS="%{NSS_CFLAGS}" \
 bash ../../configure \
+    --openjdk-target="$CROSSBUILD_ARCH" \
 %ifnarch %{jit_arches}
     --with-jvm-variants=zero \
 %endif
@@ -1636,10 +1646,10 @@ bash ../../configure \
     --with-milestone="fcs" \
     --with-update-version=%{updatever} \
     --with-build-number=%{buildver} \
-    --with-boot-jdk=/usr/lib/jvm/java-openjdk \
+    --with-boot-jdk=/usr/lib/jvm/java-8-openjdk-amd64 \
     --with-debug-level=$debugbuild \
     --enable-unlimited-crypto \
-    --enable-system-nss \
+    --disable-system-nss \
     --with-zlib=system \
     --with-libjpeg=system \
     --with-giflib=system \
@@ -1649,7 +1659,7 @@ bash ../../configure \
     --with-extra-cxxflags="$EXTRA_CPP_FLAGS" \
     --with-extra-cflags="$EXTRA_CFLAGS" \
     --with-extra-ldflags="%{ourldflags}" \
-    --with-num-cores="$NUM_PROC"
+    --with-num-cores=1
 
 cat spec.gmk
 cat hotspot-spec.gmk
@@ -1668,7 +1678,7 @@ make \
     SCTP_WERROR= \
     %{targets}
 
-make zip-docs
+#make zip-docs
 
 # the build (erroneously) removes read permissions from some jars
 # this is a regression in OpenJDK 7 (our compiler):
@@ -1689,8 +1699,8 @@ export JAVA_HOME=$(pwd)/%{buildoutputdir -- $suffix}/images/%{j2sdkimage}
 install -m 644 nss.cfg $JAVA_HOME/jre/lib/security/
 
 # Use system-wide tzdata
-rm $JAVA_HOME/jre/lib/tzdb.dat
-ln -s %{_datadir}/javazi-1.8/tzdb.dat $JAVA_HOME/jre/lib/tzdb.dat
+#rm $JAVA_HOME/jre/lib/tzdb.dat
+#ln -s %{_datadir}/javazi-1.8/tzdb.dat $JAVA_HOME/jre/lib/tzdb.dat
 
 #build cycles
 done
